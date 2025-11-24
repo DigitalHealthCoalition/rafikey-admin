@@ -44,6 +44,14 @@ const AnalysisPage: React.FC = () => {
   const [ussLoading, setUssLoading] = useState(true);
   const [ussError, setUssError] = useState<string | null>(null);
 
+  const [userSatisfaction, setUserSatisfaction] = useState<{
+    total_feedback: number;
+    emoji_distribution: Record<string, number>;
+    recent_comments: { user_id: string; emoji: string; comment: string }[];
+  } | null>(null);
+  const [userSatisfactionLoading, setUserSatisfactionLoading] = useState(true);
+  const [userSatisfactionError, setUserSatisfactionError] = useState<string | null>(null);
+
   const [timeSpent, setTimeSpent] = useState<{ average_time_spent_minutes: number | null, sessions_count?: number } | null>(null);
   const [timeSpentLoading, setTimeSpentLoading] = useState(true);
   const [timeSpentError, setTimeSpentError] = useState<string | null>(null);
@@ -72,7 +80,13 @@ const AnalysisPage: React.FC = () => {
   const [dropOffRateLoading, setDropOffRateLoading] = useState(true);
   const [dropOffRateError, setDropOffRateError] = useState<string | null>(null);
 
-  const [serviceFinderUsage, setServiceFinderUsage] = useState<{ service_finder_usage_rate: number | null, message?: string } | null>(null);
+  const [serviceFinderUsage, setServiceFinderUsage] = useState<{
+    service_finder_uses?: number;
+    unique_users?: number;
+    percent_users?: number;
+    service_finder_usage_rate?: number | null;
+    message?: string;
+  } | null>(null);
   const [serviceFinderUsageLoading, setServiceFinderUsageLoading] = useState(true);
   const [serviceFinderUsageError, setServiceFinderUsageError] = useState<string | null>(null);
 
@@ -84,7 +98,25 @@ const AnalysisPage: React.FC = () => {
   const [demographicReachLoading, setDemographicReachLoading] = useState(true);
   const [demographicReachError, setDemographicReachError] = useState<string | null>(null);
 
+  // Gender Analysis State
+  const [genderAnalysis, setGenderAnalysis] = useState<{ total_users?: number; gender_breakdown?: Record<string, number> } | null>(null);
+  const [genderAnalysisLoading, setGenderAnalysisLoading] = useState(true);
+  const [genderAnalysisError, setGenderAnalysisError] = useState<string | null>(null);
+
   const toggleSidebar = () => setIsSidebarCollapsed((prev) => !prev);
+
+  // Fetch User Satisfaction Analysis
+  React.useEffect(() => {
+    setUserSatisfactionLoading(true);
+    fetch("https://rafikey-backend.onrender.com/metrics/user_satisfaction")
+      .then(res => {
+        if (!res.ok) throw new Error("Network error");
+        return res.json();
+      })
+      .then(data => setUserSatisfaction(data))
+      .catch(() => setUserSatisfactionError("Failed to fetch User Satisfaction"))
+      .finally(() => setUserSatisfactionLoading(false));
+  }, []);
 
   // Fetch USS
   React.useEffect(() => {
@@ -169,7 +201,7 @@ const AnalysisPage: React.FC = () => {
   // Fetch Service Finder Usage Rate
   React.useEffect(() => {
     setServiceFinderUsageLoading(true);
-    fetch("https://rafikey-backend.onrender.com/metrics/service_finder_usage_rate")
+    fetch("https://rafikey-backend.onrender.com/metrics/service_finder_usage")
       .then(res => res.json())
       .then(data => setServiceFinderUsage(data))
       .catch(() => setServiceFinderUsageError("Failed to fetch Service Finder Usage Rate"))
@@ -184,6 +216,19 @@ const AnalysisPage: React.FC = () => {
       .then(data => setDemographicReach(data))
       .catch(() => setDemographicReachError("Failed to fetch Demographic Reach"))
       .finally(() => setDemographicReachLoading(false));
+  }, []);
+
+  // Fetch Gender Analysis
+  React.useEffect(() => {
+    setGenderAnalysisLoading(true);
+    fetch("https://rafikey-backend.onrender.com/metrics/gender_analysis")
+      .then(res => {
+        if (!res.ok) throw new Error("Network error");
+        return res.json();
+      })
+      .then(data => setGenderAnalysis(data))
+      .catch(() => setGenderAnalysisError("Failed to fetch Gender Analysis"))
+      .finally(() => setGenderAnalysisLoading(false));
   }, []);
 
   // Helper to get backend value for a metric
@@ -284,29 +329,64 @@ const AnalysisPage: React.FC = () => {
       case "Service Finder Usage Rate":
         if (serviceFinderUsageLoading) return "Loading...";
         if (serviceFinderUsageError) return serviceFinderUsageError;
-        if (serviceFinderUsage?.service_finder_usage_rate !== null && serviceFinderUsage?.service_finder_usage_rate !== undefined) {
-          return serviceFinderUsage.service_finder_usage_rate.toFixed(1) + "%";
+        if (
+          serviceFinderUsage &&
+          typeof serviceFinderUsage.service_finder_uses === "number" &&
+          typeof serviceFinderUsage.unique_users === "number"
+        ) {
+          return (
+            <>
+              <span className="font-bold">{serviceFinderUsage.service_finder_uses}</span>
+              <span className="ml-2 text-xs text-gray-500">
+                uses, <span className="font-bold">{serviceFinderUsage.unique_users}</span> unique users
+              </span>
+            </>
+          );
         }
         if (serviceFinderUsage?.message) {
           return serviceFinderUsage.message;
         }
         return "N/A";
       case "Demographic Reach":
-        if (demographicReachLoading) return "Loading...";
-        if (demographicReachError) return demographicReachError;
+        if (demographicReachLoading || genderAnalysisLoading) return "Loading...";
+        if (demographicReachError || genderAnalysisError) return demographicReachError || genderAnalysisError;
+        // Prefer genderAnalysis if available, fallback to demographicReach
+        const genderData = genderAnalysis && genderAnalysis.total_users !== undefined
+          ? genderAnalysis
+          : demographicReach;
         if (
-          demographicReach?.total_users !== undefined &&
-          demographicReach?.total_users !== null
+          genderData?.total_users !== undefined &&
+          genderData?.total_users !== null
         ) {
-          // Show total users and a short summary of gender breakdown
-          const total = demographicReach.total_users;
-          const genders = demographicReach.gender_breakdown
-            ? Object.entries(demographicReach.gender_breakdown)
+          const total = genderData.total_users;
+          const genders = genderData.gender_breakdown
+            ? Object.entries(genderData.gender_breakdown)
                 .filter(([k]) => k && k !== "null")
                 .map(([k, v]) => `${v} ${k}`)
                 .join(", ")
             : "";
-          return `${total} users${genders ? ", " + genders : ""}`;
+          return (
+            <div>
+              <div>
+                <span className="font-semibold">Total Users:</span> {total}
+              </div>
+              <div>
+                <span className="font-semibold">Gender Breakdown:</span>
+                {genderData.gender_breakdown && Object.keys(genderData.gender_breakdown).length > 0 ? (
+                  <ul className="mt-2">
+                    {Object.entries(genderData.gender_breakdown).map(([gender, count]) => (
+                      <li key={gender} className="flex items-center gap-2">
+                        <span className="capitalize">{gender}:</span>
+                        <span className="font-bold">{count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="ml-2 text-gray-400">No gender data available</span>
+                )}
+              </div>
+            </div>
+          );
         }
         return "N/A";
       // Add similar cases for other metrics as needed
@@ -327,50 +407,50 @@ const AnalysisPage: React.FC = () => {
       icon: <Star className="w-5 h-5" />,
       color: 'bg-yellow-500'
     },
-    {
-      id: 2,
-      category: 'Activation',
-      metric: 'Time Spent Per Session',
-      definition: 'The average duration (in minutes) from the first user interaction to the last within a session.',
-      baseline: 'TBD',
-      target: '≥ 3 minutes',
-      rationale: 'Reflects the depth of user interaction and content engagement.',
-      icon: <Clock className="w-5 h-5" />,
-      color: 'bg-blue-500'
-    },
-    {
-      id: 3,
-      category: 'Activation',
-      metric: 'Engagement Rate',
-      definition: 'The percentage of users who interact with at least three chatbot responses in a single session.',
-      baseline: 'TBD',
-      target: '60%+',
-      rationale: 'Indicates user interest and sustained engagement.',
-      icon: <MessageSquare className="w-5 h-5" />,
-      color: 'bg-green-500'
-    },
-    {
-      id: 4,
-      category: 'Activation',
-      metric: 'Message Completion Rate',
-      definition: 'The percentage of chatbot conversations that successfully provide a response before the user exits.',
-      baseline: 'TBD',
-      target: '≥ 85%',
-      rationale: 'Shows how many users receive a meaningful chatbot response before disengaging.',
-      icon: <Target className="w-5 h-5" />,
-      color: 'bg-purple-500'
-    },
-    {
-      id: 5,
-      category: 'Referral',
-      metric: 'Net Promoter Score (NPS)',
-      definition: 'Measures user loyalty by asking, "How likely are you to recommend this chatbot to a friend?" on a scale of 1-10.',
-      baseline: 'TBD',
-      target: '50+',
-      rationale: 'Assesses user satisfaction and likelihood to refer others.',
-      icon: <TrendingUp className="w-5 h-5" />,
-      color: 'bg-indigo-500'
-    },
+    // {
+    //   id: 2,
+    //   category: 'Activation',
+    //   metric: 'Time Spent Per Session',
+    //   definition: 'The average duration (in minutes) from the first user interaction to the last within a session.',
+    //   baseline: 'TBD',
+    //   target: '≥ 3 minutes',
+    //   rationale: 'Reflects the depth of user interaction and content engagement.',
+    //   icon: <Clock className="w-5 h-5" />,
+    //   color: 'bg-blue-500'
+    // },
+    // {
+    //   id: 3,
+    //   category: 'Activation',
+    //   metric: 'Engagement Rate',
+    //   definition: 'The percentage of users who interact with at least three chatbot responses in a single session.',
+    //   baseline: 'TBD',
+    //   target: '60%+',
+    //   rationale: 'Indicates user interest and sustained engagement.',
+    //   icon: <MessageSquare className="w-5 h-5" />,
+    //   color: 'bg-green-500'
+    // },
+    // {
+    //   id: 4,
+    //   category: 'Activation',
+    //   metric: 'Message Completion Rate',
+    //   definition: 'The percentage of chatbot conversations that successfully provide a response before the user exits.',
+    //   baseline: 'TBD',
+    //   target: '≥ 85%',
+    //   rationale: 'Shows how many users receive a meaningful chatbot response before disengaging.',
+    //   icon: <Target className="w-5 h-5" />,
+    //   color: 'bg-purple-500'
+    // },
+    // {
+    //   id: 5,
+    //   category: 'Referral',
+    //   metric: 'Net Promoter Score (NPS)',
+    //   definition: 'Measures user loyalty by asking, "How likely are you to recommend this chatbot to a friend?" on a scale of 1-10.',
+    //   baseline: 'TBD',
+    //   target: '50+',
+    //   rationale: 'Assesses user satisfaction and likelihood to refer others.',
+    //   icon: <TrendingUp className="w-5 h-5" />,
+    //   color: 'bg-indigo-500'
+    // },
     {
       id: 6,
       category: 'Retention',
@@ -393,17 +473,17 @@ const AnalysisPage: React.FC = () => {
       icon: <Users className="w-5 h-5" />,
       color: 'bg-orange-500'
     },
-    {
-      id: 8,
-      category: 'Referral',
-      metric: 'Referral Rate',
-      definition: 'The percentage of users who invite at least one other person to use the chatbot.',
-      baseline: 'TBD',
-      target: '≥ 15%',
-      rationale: 'Measures organic growth through word-of-mouth recommendations.',
-      icon: <Network className="w-5 h-5" />,
-      color: 'bg-teal-500'
-    },
+    // {
+    //   id: 8,
+    //   category: 'Referral',
+    //   metric: 'Referral Rate',
+    //   definition: 'The percentage of users who invite at least one other person to use the chatbot.',
+    //   baseline: 'TBD',
+    //   target: '≥ 15%',
+    //   rationale: 'Measures organic growth through word-of-mouth recommendations.',
+    //   icon: <Network className="w-5 h-5" />,
+    //   color: 'bg-teal-500'
+    // },
     {
       id: 9,
       category: 'Retention',
@@ -426,17 +506,17 @@ const AnalysisPage: React.FC = () => {
       icon: <Search className="w-5 h-5" />,
       color: 'bg-cyan-500'
     },
-    {
-      id: 11,
-      category: 'Retention',
-      metric: 'Conversion to Services',
-      definition: 'The percentage of users who visit a recommended clinic or SRHR service after interacting with the chatbot.',
-      baseline: 'TBD',
-      target: '≥ 10%',
-      rationale: 'Measures the chatbot\'s real-world impact in driving healthcare service usage.',
-      icon: <Target className="w-5 h-5" />,
-      color: 'bg-emerald-500'
-    },
+    // {
+    //   id: 11,
+    //   category: 'Retention',
+    //   metric: 'Conversion to Services',
+    //   definition: 'The percentage of users who visit a recommended clinic or SRHR service after interacting with the chatbot.',
+    //   baseline: 'TBD',
+    //   target: '≥ 10%',
+    //   rationale: 'Measures the chatbot\'s real-world impact in driving healthcare service usage.',
+    //   icon: <Target className="w-5 h-5" />,
+    //   color: 'bg-emerald-500'
+    // },
     {
       id: 12,
       category: 'Acquisition',
@@ -448,86 +528,86 @@ const AnalysisPage: React.FC = () => {
       icon: <Users className="w-5 h-5" />,
       color: 'bg-violet-500'
     },
-    {
-      id: 13,
-      category: 'Activation',
-      metric: 'AI Response Accuracy',
-      definition: 'The percentage of chatbot responses validated as accurate and contextually relevant by SRHR specialists.',
-      baseline: 'TBD',
-      target: '≥ 90%',
-      rationale: 'Tracks the chatbot\'s ability to provide reliable and fact-based information.',
-      icon: <Shield className="w-5 h-5" />,
-      color: 'bg-lime-500'
-    },
-    {
-      id: 14,
-      category: 'Retention',
-      metric: 'AI Training Improvement Rate',
-      definition: 'The percentage reduction in chatbot errors and misinterpretations over time.',
-      baseline: 'TBD',
-      target: '30%+ reduction',
-      rationale: 'Measures improvements in chatbot intelligence and performance.',
-      icon: <Activity className="w-5 h-5" />,
-      color: 'bg-amber-500'
-    },
-    {
-      id: 15,
-      category: 'Revenue',
-      metric: 'Cost per User Interaction',
-      definition: 'The total operational costs divided by the number of chatbot interactions.',
-      baseline: 'TBD',
-      target: '≤ $0.10',
-      rationale: 'Ensures cost-efficiency and sustainability.',
-      icon: <DollarSign className="w-5 h-5" />,
-      color: 'bg-green-600'
-    },
-    {
-      id: 16,
-      category: 'Retention',
-      metric: 'Technical Uptime & Stability',
-      definition: 'The percentage of time the chatbot remains operational and accessible without downtime.',
-      baseline: 'TBD',
-      target: '≥ 99%',
-      rationale: 'Measures reliability and availability.',
-      icon: <Shield className="w-5 h-5" />,
-      color: 'bg-slate-500'
-    },
-    {
-      id: 17,
-      category: 'Acquisition',
-      metric: 'Number of Partner Organizations Integrated',
-      definition: 'The number of digital SRHR initiatives or organizations linked to the chatbot for referrals and data sharing.',
-      baseline: 'TBD',
-      target: '5+',
-      rationale: 'Expands reach and impact through strategic collaborations.',
-      icon: <Network className="w-5 h-5" />,
-      color: 'bg-rose-500'
-    },
-    {
-      id: 18,
-      category: 'Retention',
-      metric: 'Intervention Consolidation Rate',
-      definition: 'The percentage reduction in duplication of digital SRHR efforts by leveraging the chatbot as a central information hub.',
-      baseline: 'TBD',
-      target: '20%+',
-      rationale: 'Measures efficiency in streamlining digital SRHR services.',
-      icon: <RefreshCw className="w-5 h-5" />,
-      color: 'bg-fuchsia-500'
-    },
-    {
-      id: 19,
-      category: 'Acquisition',
-      metric: 'Cross-Platform Reach',
-      definition: 'The percentage of users engaging with the chatbot across multiple platforms (e.g., WhatsApp, Messenger, Web).',
-      baseline: 'TBD',
-      target: '≥ 30%',
-      rationale: 'Ensures accessibility and usability across different user-preferred channels.',
-      icon: <Smartphone className="w-5 h-5" />,
-      color: 'bg-sky-500'
-    }
+    // {
+    //   id: 13,
+    //   category: 'Activation',
+    //   metric: 'AI Response Accuracy',
+    //   definition: 'The percentage of chatbot responses validated as accurate and contextually relevant by SRHR specialists.',
+    //   baseline: 'TBD',
+    //   target: '≥ 90%',
+    //   rationale: 'Tracks the chatbot\'s ability to provide reliable and fact-based information.',
+    //   icon: <Shield className="w-5 h-5" />,
+    //   color: 'bg-lime-500'
+    // },
+    // {
+    //   id: 14,
+    //   category: 'Retention',
+    //   metric: 'AI Training Improvement Rate',
+    //   definition: 'The percentage reduction in chatbot errors and misinterpretations over time.',
+    //   baseline: 'TBD',
+    //   target: '30%+ reduction',
+    //   rationale: 'Measures improvements in chatbot intelligence and performance.',
+    //   icon: <Activity className="w-5 h-5" />,
+    //   color: 'bg-amber-500'
+    // },
+    // {
+    //   id: 15,
+    //   category: 'Revenue',
+    //   metric: 'Cost per User Interaction',
+    //   definition: 'The total operational costs divided by the number of chatbot interactions.',
+    //   baseline: 'TBD',
+    //   target: '≤ $0.10',
+    //   rationale: 'Ensures cost-efficiency and sustainability.',
+    //   icon: <DollarSign className="w-5 h-5" />,
+    //   color: 'bg-green-600'
+    // },
+    // {
+    //   id: 16,
+    //   category: 'Retention',
+    //   metric: 'Technical Uptime & Stability',
+    //   definition: 'The percentage of time the chatbot remains operational and accessible without downtime.',
+    //   baseline: 'TBD',
+    //   target: '≥ 99%',
+    //   rationale: 'Measures reliability and availability.',
+    //   icon: <Shield className="w-5 h-5" />,
+    //   color: 'bg-slate-500'
+    // },
+    // {
+    //   id: 17,
+    //   category: 'Acquisition',
+    //   metric: 'Number of Partner Organizations Integrated',
+    //   definition: 'The number of digital SRHR initiatives or organizations linked to the chatbot for referrals and data sharing.',
+    //   baseline: 'TBD',
+    //   target: '5+',
+    //   rationale: 'Expands reach and impact through strategic collaborations.',
+    //   icon: <Network className="w-5 h-5" />,
+    //   color: 'bg-rose-500'
+    // },
+    // {
+    //   id: 18,
+    //   category: 'Retention',
+    //   metric: 'Intervention Consolidation Rate',
+    //   definition: 'The percentage reduction in duplication of digital SRHR efforts by leveraging the chatbot as a central information hub.',
+    //   baseline: 'TBD',
+    //   target: '20%+',
+    //   rationale: 'Measures efficiency in streamlining digital SRHR services.',
+    //   icon: <RefreshCw className="w-5 h-5" />,
+    //   color: 'bg-fuchsia-500'
+    // },
+    // {
+    //   id: 19,
+    //   category: 'Acquisition',
+    //   metric: 'Cross-Platform Reach',
+    //   definition: 'The percentage of users engaging with the chatbot across multiple platforms (e.g., WhatsApp, Messenger, Web).',
+    //   baseline: 'TBD',
+    //   target: '≥ 30%',
+    //   rationale: 'Ensures accessibility and usability across different user-preferred channels.',
+    //   icon: <Smartphone className="w-5 h-5" />,
+    //   color: 'bg-sky-500'
+    // }
   ];
 
-  const categories = ['All', 'Activation', 'Acquisition', 'Retention', 'Referral', 'Revenue'];
+  const categories = ['All', 'Activation', 'Retention', 'Acquisition'];
 
   const filteredMetrics = metrics.filter(metric => {
     const matchesCategory = selectedCategory === 'All' || metric.category === selectedCategory;
@@ -541,8 +621,8 @@ const AnalysisPage: React.FC = () => {
       'Activation': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
       'Acquisition': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
       'Retention': 'bg-green-500/20 text-green-400 border-green-500/30',
-      'Referral': 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-      'Revenue': 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+      // 'Referral': 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+      // 'Revenue': 'bg-orange-500/20 text-orange-400 border-orange-500/30'
     };
     return colors[category as keyof typeof colors] || 'bg-gray-500/20 text-gray-400 border-gray-500/30';
   };
@@ -711,11 +791,57 @@ const AnalysisPage: React.FC = () => {
                         isDarkMode ? "text-white" : "text-gray-900"
                       }`}
                     >
-                      {getMetricValue(metric)}
+                      {metric.metric === "User Satisfaction Score (USS)" && userSatisfaction && !userSatisfactionLoading && !userSatisfactionError ? (
+                        <div>
+                          <div className="mb-2">
+                            <span className="text-xs text-gray-500 mr-2">Total Feedback:</span>
+                            <span className="font-bold">{userSatisfaction.total_feedback}</span>
+                          </div>
+                          <div className="mb-2">
+                            <span className="text-xs text-gray-500 mr-2">Emoji Distribution:</span>
+                            {Object.entries(userSatisfaction.emoji_distribution).length === 0 ? (
+                              <span className="text-gray-400">No emoji data</span>
+                            ) : (
+                              Object.entries(userSatisfaction.emoji_distribution).map(([emoji, count]) => (
+                                <span
+                                  key={emoji}
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mr-2 ${
+                                    isDarkMode ? "bg-gray-700 text-yellow-300" : "bg-yellow-100 text-yellow-700"
+                                  }`}
+                                >
+                                  <span className="mr-1">{emoji}</span> {count}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                          <div>
+                            {/* <span className="text-xs text-gray-500 mr-2">Recent Comments:</span> */}
+                            {userSatisfaction.recent_comments.length === 0 ? (
+                              <span className="text-gray-400">No recent comments</span>
+                            ) : (
+                              <ul className="mt-1 space-y-1">
+                                {userSatisfaction.recent_comments.map((c, idx) => (
+                                  <li key={idx} className="flex items-start gap-2">
+                                    <span className="text-base">{c.emoji}</span>
+                                    {/* <span className="text-xs text-gray-400">User: {c.user_id}</span> */}
+                                    {/* <span className={`text-xs ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>{c.comment}</span> */}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      ) : metric.metric === "User Satisfaction Score (USS)" && userSatisfactionLoading ? (
+                        <span className="text-gray-400">Loading...</span>
+                      ) : metric.metric === "User Satisfaction Score (USS)" && userSatisfactionError ? (
+                        <span className="text-red-500">{userSatisfactionError}</span>
+                      ) : (
+                        getMetricValue(metric)
+                      )}
                     </div>
                   </div>
 
-                  <div
+                  {/* <div
                     className={`p-3 rounded-lg ${
                       isDarkMode ? "bg-green-500/10" : "bg-green-50"
                     }`}
@@ -734,7 +860,7 @@ const AnalysisPage: React.FC = () => {
                     >
                       {metric.target}
                     </div>
-                  </div>
+                  </div> */}
                 </div>
 
                 {/* Rationale */}
